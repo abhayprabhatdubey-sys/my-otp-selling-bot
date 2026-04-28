@@ -3,8 +3,8 @@ from telebot import types
 import time
 
 # --- CONFIGURATION ---
-# Naya Token jo aapne abhi diya
-TOKEN = '8692935006:AAHKvCDC4Th_Iv70GwxZb1is5d8dE0ed56g'
+# Aapka ekdum naya token
+TOKEN = '8692935006:AAF3uUPWZbd9f4NuiUZPbWYycUDrfsEY1tQ'
 ADMIN_ID = 7634311488 
 
 bot = telebot.TeleBot(TOKEN)
@@ -23,22 +23,22 @@ def start(message):
     btn4 = types.KeyboardButton('📞 Support')
     markup.add(btn1, btn2, btn3, btn4)
     
-    bot.send_message(message.chat.id, f"Welcome {message.from_user.first_name}!\nAbhay ka OTP Bot ab live hai.", reply_markup=markup)
+    bot.send_message(message.chat.id, f"Welcome {message.from_user.first_name}!\nAbhay ka Bot ekdum mast chal raha hai.", reply_markup=markup)
 
 @bot.message_handler(func=lambda message: message.text == '💰 Balance')
 def check_balance(message):
     bal = user_data.get(message.from_user.id, {}).get('balance', 0)
-    bot.reply_to(message, f"👤 User: {message.from_user.first_name}\n💰 Aapka Balance: {bal} INR")
+    bot.reply_to(message, f"👤 User: {message.from_user.first_name}\n💰 Balance: {bal} INR")
 
 @bot.message_handler(func=lambda message: message.text == '📞 Support')
 def support(message):
-    bot.reply_to(message, "Support ke liye Admin @Abhay_Support_Bot ko message karein.")
+    bot.reply_to(message, "Admin se contact karein: @Abhay_Support")
 
-# Conflict error se bachne ke liye loop
+# Loop to handle 409 Conflict automatically
 while True:
     try:
-        print("Bot chalu ho raha hai...")
+        print("Bot starting fresh...")
         bot.polling(none_stop=True, interval=0, timeout=20)
     except Exception as e:
-        print(f"Error: {e}")
-        time.sleep(5) # 5 second wait karke phir se start hoga
+        print(f"Connection issue: {e}")
+        time.sleep(5)
