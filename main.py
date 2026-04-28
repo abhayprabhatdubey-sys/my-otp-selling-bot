@@ -2,7 +2,7 @@ import telebot
 from telebot import types
 
 # --- CONFIGURATION ---
-TOKEN = 8745603057:AAHQfMfRNXP_898hBrZToaXsEigbP_m2sZQ
+TOKEN = '8745603057:AAHQfMfRNXP_898hBrZToaXsEigbP_m2sZQ'
 ADMIN_ID = 7634311488 
 
 bot = telebot.TeleBot(TOKEN)
@@ -28,5 +28,9 @@ def check_balance(message):
     bal = user_data.get(message.from_user.id, {}).get('balance', 0)
     bot.reply_to(message, f"👤 User: {message.from_user.first_name}\n💰 Aapka Balance: {bal} INR")
 
-print("Bot chalu ho gaya hai...")
+@bot.message_handler(func=lambda message: message.text == '📞 Support')
+def support(message):
+    bot.reply_to(message, "Bhai, support ke liye Admin ko contact karein.")
+
+print("Bot is starting...")
 bot.polling(none_stop=True)
