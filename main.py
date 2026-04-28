@@ -3,7 +3,7 @@ from telebot import types
 
 # --- CONFIGURATION ---
 # Aapka Bot Token
-TOKEN = '8745603057:AAGrtukbcj7KCBZK2FsX5j89sA4VfPrN'
+TOKEN = 8745603057:AAGqwBmQex3TyJsz965ighIGPYk1F5oP9-o
 # Aapki Telegram ID (Admin)
 ADMIN_ID = 7634311488 
 
@@ -42,4 +42,4 @@ def support(message):
 
 # Bot ko chalu rakhne ke liye
 print("Bot is running...")
-bot.polling(none_stop=True)
+bot.polling(none_stop=True) 
