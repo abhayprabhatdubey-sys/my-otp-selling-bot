@@ -1,8 +1,10 @@
 import telebot
 from telebot import types
+import time
 
 # --- CONFIGURATION ---
-TOKEN = '8745603057:AAHQfMfRNXP_898hBrZToaXsEigbP_m2sZQ'
+# Naya Token jo aapne abhi diya
+TOKEN = '8692935006:AAHKvCDC4Th_Iv70GwxZb1is5d8dE0ed56g'
 ADMIN_ID = 7634311488 
 
 bot = telebot.TeleBot(TOKEN)
@@ -21,7 +23,7 @@ def start(message):
     btn4 = types.KeyboardButton('📞 Support')
     markup.add(btn1, btn2, btn3, btn4)
     
-    bot.send_message(message.chat.id, f"Welcome {message.from_user.first_name}!\nUnlimited OTP Bot ready hai.", reply_markup=markup)
+    bot.send_message(message.chat.id, f"Welcome {message.from_user.first_name}!\nAbhay ka OTP Bot ab live hai.", reply_markup=markup)
 
 @bot.message_handler(func=lambda message: message.text == '💰 Balance')
 def check_balance(message):
@@ -30,7 +32,13 @@ def check_balance(message):
 
 @bot.message_handler(func=lambda message: message.text == '📞 Support')
 def support(message):
-    bot.reply_to(message, "Bhai, support ke liye Admin ko contact karein.")
+    bot.reply_to(message, "Support ke liye Admin @Abhay_Support_Bot ko message karein.")
 
-print("Bot is starting...")
-bot.polling(none_stop=True)
+# Conflict error se bachne ke liye loop
+while True:
+    try:
+        print("Bot chalu ho raha hai...")
+        bot.polling(none_stop=True, interval=0, timeout=20)
+    except Exception as e:
+        print(f"Error: {e}")
+        time.sleep(5) # 5 second wait karke phir se start hoga
