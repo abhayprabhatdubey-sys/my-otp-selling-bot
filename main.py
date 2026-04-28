@@ -4,123 +4,116 @@ from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 import asyncio
 import time
+import os
 
-# --- CONFIGURATION (Naya Token Updated) ---
+# --- CONFIGURATION ---
 TOKEN = '8692935006:AAFGFN6aeecPubPdd821zq-CmQnZzMtySsw' 
 API_ID = 35155488
 API_HASH = '9ee6b40363f94481d48dea8a3a871728'
-ADMIN_IDS = [7634311488] 
-
-# --- SETTINGS ---
-CHANNEL_USERNAME = "PRIME_OTP_STORE" 
-UPI_ID = "abhay-op.315@ptyes"
-SUPPORT = "@PRIME_OTP_SUPPROT"
-ADMIN_USER = "@GOD_ABHAY"
 
 bot = telebot.TeleBot(TOKEN)
-user_sessions = {}
-db = {'users': {}}
+active_clients = {} # Session storage for buyer/seller tasks
 
-# --- FORCE JOIN CHECK ---
-def is_subscribed(user_id):
-    try:
-        status = bot.get_chat_member(f"@{CHANNEL_USERNAME}", user_id).status
-        return status in ['member', 'administrator', 'creator']
-    except: return True
+# --- DATABASE ---
+db = {
+    'users': {}, 
+    'admins': [7634311488],
+    'stock': [] # {'id': 'phone', 'price': 10, 'country': 'India'}
+}
+
+# --- HELPERS ---
+def is_admin(uid): return uid in db['admins']
 
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = message.from_user.id
-    if not is_subscribed(uid):
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{CHANNEL_USERNAME}"))
-        markup.add(types.InlineKeyboardButton("✅ Joined", callback_data="check_join"))
-        return bot.send_message(message.chat.id, "❌ Pehle channel join karein tabhi bot chalega!", reply_markup=markup)
-    
     if uid not in db['users']: db['users'][uid] = {'balance': 0}
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add('📲 Start Login', '💰 Balance', '📥 Deposit', '📞 Support')
-    bot.send_message(message.chat.id, f"🔥 Welcome! {ADMIN_USER} OTP Bot is Live.", reply_markup=markup)
+    markup.add('📲 Start Login', '💰 Balance', '📥 Deposit', '📤 Sell My ID')
+    if is_admin(uid): markup.add('/admin')
+    bot.send_message(message.chat.id, "🔥 Prime Automation Bot Active!", reply_markup=markup)
 
-# --- DEPOSIT SYSTEM ---
-@bot.message_handler(func=lambda message: message.text == '📥 Deposit')
-def dep_1(message):
-    msg = bot.send_message(message.chat.id, "💰 Amount likho (e.g. 100):")
-    bot.register_next_step_handler(msg, dep_2)
+# --- AUTO-LOGIN SELLING SYSTEM ---
+@bot.message_handler(func=lambda message: message.text == '📤 Sell My ID')
+def sell_auto_start(message):
+    msg = bot.send_message(message.chat.id, "📞 Sell karne wali ID ka number bhejein (+91...):")
+    bot.register_next_step_handler(msg, sell_process_number)
 
-def dep_2(message):
-    try:
-        amt = int(message.text)
-        msg = bot.send_message(message.chat.id, f"💳 Pay {amt} to `{UPI_ID}`\n\nAb **UTR Number** bhejo:", parse_mode="Markdown")
-        bot.register_next_step_handler(msg, dep_3, amt)
-    except: bot.send_message(message.chat.id, "❌ Number likho bhai!")
-
-def dep_3(message, amt):
-    utr = message.text
-    msg = bot.send_message(message.chat.id, "📸 Payment Screenshot bhejo:")
-    bot.register_next_step_handler(msg, dep_final, amt, utr)
-
-def dep_final(message, amt, utr):
-    if message.content_type == 'photo':
-        for adm in ADMIN_IDS:
-            bot.send_message(adm, f"🔔 *NEW DEPOSIT REQUEST*\nUser ID: `{message.from_user.id}`\nAmount: {amt}\nUTR: {utr}")
-            bot.forward_message(adm, message.chat.id, message.message_id)
-        bot.send_message(message.chat.id, "✅ Admin ko details bhej di gayi hain! 5 min wait karein.")
-    else: bot.send_message(message.chat.id, "❌ Photo bhejo bhai!")
-
-# --- LOGIN & 2FA ---
-@bot.message_handler(func=lambda message: message.text == '📲 Start Login')
-def login_start(message):
-    msg = bot.send_message(message.chat.id, "📞 Phone number bhejo (+91 ke saath):")
-    bot.register_next_step_handler(msg, process_num)
-
-def process_num(message):
+def sell_process_number(message):
     phone = message.text.replace(" ", "")
-    chat_id = message.chat.id
     client = TelegramClient(f"sessions/{phone}", API_ID, API_HASH)
-    user_sessions[chat_id] = {'client': client, 'phone': phone}
-    asyncio.run(send_code(chat_id, phone, client))
+    active_clients[message.chat.id] = {'client': client, 'phone': phone}
+    asyncio.run(sell_send_code(message.chat.id, phone, client))
 
-async def send_code(chat_id, phone, client):
+async def sell_send_code(chat_id, phone, client):
     await client.connect()
     try:
         req = await client.send_code_request(phone)
-        user_sessions[chat_id]['hash'] = req.phone_code_hash
-        msg = bot.send_message(chat_id, "📩 OTP bhejo:")
-        bot.register_next_step_handler(msg, process_otp)
+        active_clients[chat_id]['hash'] = req.phone_code_hash
+        msg = bot.send_message(chat_id, "📩 Seller, aapke number par OTP gaya hai, yahan likhein:")
+        bot.register_next_step_handler(msg, sell_process_otp)
     except Exception as e: bot.send_message(chat_id, f"❌ Error: {e}")
 
-def process_otp(message):
+def sell_process_otp(message):
     otp = message.text.strip()
-    chat_id = message.chat.id
-    s = user_sessions[chat_id]
-    asyncio.run(finish_login(chat_id, otp, s['client'], s['phone'], s['hash']))
+    s = active_clients[message.chat.id]
+    asyncio.run(sell_finish(message.chat.id, otp, s['client'], s['phone'], s['hash']))
 
-async def finish_login(chat_id, otp, client, phone, hash):
+async def sell_finish(chat_id, otp, client, phone, hash):
     try:
         await client.sign_in(phone, otp, phone_code_hash=hash)
-        me = await client.get_me()
-        bot.send_message(chat_id, f"✅ Login Success: {me.first_name}\nSession saved!")
+        # Success - Add to stock
+        db['stock'].append({'phone': phone, 'price': 20}) # Admin can change price later
+        bot.send_message(chat_id, "✅ ID Login Successful! Admin check karke aapka balance add kar dega.")
+        await client.disconnect()
     except SessionPasswordNeededError:
         msg = bot.send_message(chat_id, "🔐 2FA Password bhejo:")
-        bot.register_next_step_handler(msg, process_2fa)
-    except Exception as e: bot.send_message(chat_id, f"❌ Fail: {e}")
+        bot.register_next_step_handler(msg, sell_process_2fa)
 
-def process_2fa(message):
+def sell_process_2fa(message):
     pw = message.text.strip()
-    client = user_sessions[message.chat.id]['client']
+    client = active_clients[message.chat.id]['client']
     asyncio.run(client.sign_in(password=pw))
-    bot.send_message(message.chat.id, "✅ 2FA Success!")
+    bot.send_message(message.chat.id, "✅ 2FA Success! ID Stock mein hai.")
 
-@bot.callback_query_handler(func=lambda call: call.data == "check_join")
-def check_callback(call):
-    if is_subscribed(call.from_user.id):
-        bot.answer_callback_query(call.id, "✅ Success!")
-        start(call.message)
-    else: bot.answer_callback_query(call.id, "❌ Join nahi kiya!", show_alert=True)
+# --- BUYER PANEL (OTP & LOGOUT) ---
+@bot.message_handler(func=lambda message: message.text == '📲 Start Login')
+def buy_account(message):
+    if not db['stock']: return bot.send_message(message.chat.id, "❌ Stock khali hai.")
+    # Simple logic: first item in stock
+    account = db['stock'].pop(0)
+    phone = account['phone']
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🔄 Get Code Again", callback_data=f"getcode_{phone}"),
+               types.InlineKeyboardButton("🚪 Logout Session", callback_data=f"logout_{phone}"))
+    
+    bot.send_message(message.chat.id, f"✅ Account Purchased!\n📱 Number: `{phone}`\n\nAb aap login karein, OTP chahiye ho toh niche button dabayein.", 
+                     parse_mode="Markdown", reply_markup=markup)
 
-# Main Loop
+@bot.callback_query_handler(func=lambda call: call.data.startswith(('getcode_', 'logout_')))
+def handle_buyer_actions(call):
+    action, phone = call.data.split('_')
+    client = TelegramClient(f"sessions/{phone}", API_ID, API_HASH)
+    
+    if action == 'getcode':
+        asyncio.run(fetch_last_otp(call.message.chat.id, client))
+    elif action == 'logout':
+        asyncio.run(terminate_session(call.message.chat.id, client, phone))
+
+async def fetch_last_otp(chat_id, client):
+    await client.connect()
+    async for message in client.iter_messages(777000, limit=1):
+        bot.send_message(chat_id, f"📩 Latest Telegram Code: `{message.text}`", parse_mode="Markdown")
+    await client.disconnect()
+
+async def terminate_session(chat_id, client, phone):
+    await client.connect()
+    await client.log_out()
+    os.remove(f"sessions/{phone}.session")
+    bot.send_message(chat_id, "🚪 Session Logged out and Deleted successfully!")
+
+# Loop
 while True:
-    try:
-        bot.polling(none_stop=True, interval=2)
+    try: bot.polling(none_stop=True)
     except: time.sleep(5)
