@@ -9,7 +9,7 @@ from threading import Thread
 # --- WEB SERVER ---
 app = Flask('')
 @app.route('/')
-def home(): return "BOT IS LIVE!"
+def home(): return "BOT LIVE"
 def run(): app.run(host='0.0.0.0', port=8080)
 def keep_alive(): Thread(target=run).start()
 
@@ -35,6 +35,12 @@ active_logins = {}
 def is_owner(uid): return uid == OWNER_ID
 def is_admin(uid): return uid in db['admins'] or uid == OWNER_ID
 
+# --- KEYBOARDS ---
+def main_menu():
+    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup.add('💰 BALANCE', '📥 DEPOSIT', '📤 SELL ID', '🛒 BUY ID', '👥 REFERRAL', '📞 SUPPORT')
+    return markup
+
 # --- START & REFERRAL ---
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -43,47 +49,55 @@ def start(message):
     if uid not in db['users']:
         ref = int(args[1]) if len(args) > 1 and args[1].isdigit() else None
         db['users'][uid] = {'balance': 0, 'referred_by': ref}
-    
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add('💰 BALANCE', '📥 DEPOSIT', '📤 SELL ID', '🛒 BUY ID', '👥 REFERRAL', '📞 SUPPORT')
-    bot.send_message(message.chat.id, "🔥 PRIME OTP BOT READY", reply_markup=markup)
+        if ref:
+            try: bot.send_message(ref, "🔔 **NEW USER JOINED VIA YOUR LINK!**")
+            except: pass
+    bot.send_message(message.chat.id, "🔥 **WELCOME TO PRIME OTP BOT**", reply_markup=main_menu())
 
-# --- ADMIN PANEL & COMMANDS ---
+# --- ADMIN PANEL ---
 @bot.message_handler(commands=['admin'])
-def admin_panel(message):
+def admin_p(message):
     if not is_admin(message.from_user.id): return
     text = (
-        "👑 ADMIN CONTROLS\n\n"
-        "📈 /setbuy INDIA 40 - Set Buy Price\n"
-        "📉 /setsell INDIA 25 - Set Sell Price\n"
-        "➕ /addstock INDIA data - Add ID to Stock\n"
-        "❌ /removestock INDIA - Clear Stock\n"
-        "💳 /changeupi ID - Update Payment UPI\n"
-        "👤 /addadmin ID - Add New Admin\n"
-        "🚫 /removeadmin ID - Remove Admin\n"
-        "📢 /broadcast MSG - Send to all users\n"
-        "📜 /list - View Rates & Stock"
+        "👑 **ADMIN PANEL**\n\n"
+        "📈 `/setbuy RUSSIA 50` - Set Buy Price\n"
+        "📉 `/setsell RUSSIA 30` - Set Sell Price\n"
+        "➕ `/addstock RUSSIA data` - Add ID Stock\n"
+        "💳 `/changeupi ID` - Update Payment UPI\n"
+        "👤 `/addadmin ID` - Add New Admin\n"
+        "📢 `/broadcast MSG` - Send to All\n"
+        "📜 `/list` - View All Rates & Stock"
     )
     bot.send_message(message.chat.id, text)
 
-@bot.message_handler(commands=['addadmin'])
-def add_adm(message):
-    if is_owner(message.from_user.id):
-        try:
-            nid = int(message.text.split()[1])
-            if nid not in db['admins']: db['admins'].append(nid)
-            bot.reply_to(message, f"✅ Admin {nid} added.")
-        except: pass
-
-@bot.message_handler(commands=['changeupi'])
-def ch_upi(message):
+@bot.message_handler(commands=['setbuy'])
+def set_b(message):
     if is_admin(message.from_user.id):
         try:
-            db['upi'] = message.text.split()[1]
-            bot.reply_to(message, f"✅ UPI Updated: `{db['upi']}`")
-        except: pass
+            _, c, p = message.text.split()
+            db['buy_rates'][c.upper()] = int(p)
+            bot.reply_to(message, f"✅ Buying for {c.upper()} set to ₹{p}")
+        except: bot.reply_to(message, "Usage: `/setbuy INDIA 40` ")
 
-# --- BUY SYSTEM (STRICT CHECK) ---
+@bot.message_handler(commands=['setsell'])
+def set_s(message):
+    if is_admin(message.from_user.id):
+        try:
+            _, c, p = message.text.split()
+            db['sell_rates'][c.upper()] = int(p)
+            bot.reply_to(message, f"✅ Selling for {c.upper()} set to ₹{p}")
+        except: bot.reply_to(message, "Usage: `/setsell INDIA 25` ")
+
+@bot.message_handler(commands=['list'])
+def list_all(message):
+    if is_admin(message.from_user.id):
+        res = "📊 **SYSTEM STATUS:**\n\n"
+        for c in db['buy_rates']:
+            sc = len(db['stock'].get(c, []))
+            res += f"🌍 **{c}**\nBuy: ₹{db['buy_rates'][c]} | Sell: ₹{db['sell_rates'].get(c, 'N/A')}\nStock: {sc}\n\n"
+        bot.send_message(message.chat.id, res if db['buy_rates'] else "❌ No data set.")
+
+# --- MULTI-COUNTRY BUY SYSTEM ---
 @bot.message_handler(func=lambda m: 'BUY ID' in m.text)
 def buy_menu(message):
     if not db['buy_rates']:
@@ -93,118 +107,72 @@ def buy_menu(message):
         count = len(db['stock'].get(c, []))
         status = f"({count} left)" if count > 0 else "(OUT OF STOCK)"
         markup.add(types.InlineKeyboardButton(f"{c} - ₹{p} {status}", callback_data=f"buy_{c}"))
-    bot.send_message(message.chat.id, "🛒 SELECT COUNTRY:", reply_markup=markup)
+    bot.send_message(message.chat.id, "🛒 **SELECT COUNTRY TO BUY:**", reply_markup=markup)
 
-# --- SELL SYSTEM (AUTO LOGIN + ADMIN APPROVE) ---
+# --- MULTI-COUNTRY SELL SYSTEM ---
 @bot.message_handler(func=lambda m: 'SELL ID' in m.text)
 def sell_init(message):
     if not db['sell_rates']:
-        return bot.send_message(message.chat.id, "❌ ID SELLING IS DISABLED BY ADMIN.")
-    msg = bot.send_message(message.chat.id, "📞 ENTER NUMBER (+91...):")
-    bot.register_next_step_handler(msg, sell_step_otp)
+        return bot.send_message(message.chat.id, "❌ SELLING IS DISABLED!")
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    for c in db['sell_rates']:
+        markup.add(f"SELL {c}")
+    markup.add("🔙 BACK")
+    bot.send_message(message.chat.id, "🌍 **CHOOSE COUNTRY TO SELL:**", reply_markup=markup)
 
-def sell_step_otp(message):
+@bot.message_handler(func=lambda m: m.text.startswith('SELL '))
+def sell_country_proc(message):
+    country = message.text.split()[1]
+    msg = bot.send_message(message.chat.id, f"📞 **ENTER {country} NUMBER:**", reply_markup=types.ReplyKeyboardRemove())
+    bot.register_next_step_handler(msg, sell_2, country)
+
+def sell_2(message, country):
     phone = message.text.strip()
-    bot.send_message(message.chat.id, "⏳ GETTING OTP...")
+    bot.send_message(message.chat.id, "⏳ **GETTING OTP...**")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     client = TelegramClient(f"sessions/{phone}", API_ID, API_HASH, loop=loop)
-    active_logins[message.chat.id] = {'client': client, 'phone': phone, 'loop': loop}
+    active_logins[message.chat.id] = {'client': client, 'phone': phone, 'loop': loop, 'country': country}
     try:
         loop.run_until_complete(client.connect())
         req = loop.run_until_complete(client.send_code_request(phone))
         active_logins[message.chat.id]['hash'] = req.phone_code_hash
-        msg = bot.send_message(message.chat.id, "📩 ENTER OTP:")
-        bot.register_next_step_handler(msg, sell_verify)
-    except: bot.reply_to(message, "❌ Connection Error.")
+        msg = bot.send_message(message.chat.id, "📩 **ENTER OTP:**")
+        bot.register_next_step_handler(msg, sell_3)
+    except: bot.reply_to(message, "❌ Connection Failed.")
 
-def sell_verify(message):
+def sell_3(message):
     otp = message.text.strip()
-    data = active_logins.get(message.chat.id)
+    d = active_logins.get(message.chat.id)
     try:
-        data['loop'].run_until_complete(data['client'].sign_in(data['phone'], otp, phone_code_hash=data['hash']))
+        d['loop'].run_until_complete(d['client'].sign_in(d['phone'], otp, phone_code_hash=d['hash']))
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("✅ LOGIN & APPROVE", callback_data=f"sa_{message.from_user.id}_{data['phone']}"))
+        markup.add(types.InlineKeyboardButton("✅ LOGIN & APPROVE", callback_data=f"sa_{message.from_user.id}_{d['phone']}_{d['country']}"))
         for a in db['admins']:
-            bot.send_message(a, f"🔔 SELL REQ: {data['phone']}\nUser: {message.from_user.id}", reply_markup=markup)
-        bot.send_message(message.chat.id, "⏳ VERIFIED! WAIT FOR ADMIN APPROVAL.")
-    except: bot.reply_to(message, "❌ Login Failed.")
+            bot.send_message(a, f"🔔 **SELL REQ: {d['country']}**\nUser: {message.from_user.id}", reply_markup=markup)
+        bot.send_message(message.chat.id, "⏳ **VERIFIED! WAIT FOR ADMIN APPROVAL.**")
+    except: bot.reply_to(message, "❌ Invalid OTP.")
 
-# --- DEPOSIT (12-DIGIT UTR CHECK) ---
+# --- DEPOSIT (12-DIGIT UTR) ---
 @bot.message_handler(func=lambda m: 'DEPOSIT' in m.text)
 def dep_start(message):
-    msg = bot.send_message(message.chat.id, "💵 ENTER AMOUNT:")
+    msg = bot.send_message(message.chat.id, "💵 **ENTER AMOUNT:**")
     bot.register_next_step_handler(msg, dep_2)
 
 def dep_2(message):
     try:
         amt = int(message.text)
-        bot.send_message(message.chat.id, f"💳 PAY TO: `{db['upi']}`\nSEND 12-DIGIT UTR:")
+        bot.send_message(message.chat.id, f"💳 **PAY TO:** `{db['upi']}`\n**SEND 12-DIGIT UTR:**")
         bot.register_next_step_handler(message, dep_3, amt)
-    except: bot.send_message(message.chat.id, "❌ Invalid Amount.")
+    except: bot.reply_to(message, "❌ Invalid Amount.")
 
 def dep_3(message, amt):
-    utr = message.text.strip()
-    if len(utr) != 12: return bot.send_message(message.chat.id, "❌ REJECTED! UTR MUST BE 12 DIGITS.")
-    bot.send_message(message.chat.id, "📸 SEND SCREENSHOT:")
-    bot.register_next_step_handler(message, dep_final, amt, utr)
+    u = message.text.strip()
+    if len(u) != 12: return bot.send_message(message.chat.id, "❌ **REJECTED: 12 DIGITS ONLY.**")
+    bot.send_message(message.chat.id, "📸 **SEND SCREENSHOT:**")
+    bot.register_next_step_handler(message, dep_final, amt, u)
 
 def dep_final(message, amt, utr):
-    if message.content_type != 'photo': return bot.send_message(message.chat.id, "❌ Photo Required.")
+    if message.content_type != 'photo': return bot.reply_to(message, "❌ Photo Required.")
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("✅ APPROVE", callback_data=f"da_{message.from_user.id}_{amt}"))
-    for a in db['admins']:
-        bot.send_message(a, f"🔔 DEPOSIT REQ: {amt}\nUTR: {utr}", reply_markup=markup)
-        bot.send_photo(a, message.photo[-1].file_id)
-
-# --- CALLBACKS (APPROVE/BUY) ---
-@bot.callback_query_handler(func=lambda call: True)
-def handle_calls(call):
-    p = call.data.split('_')
-    if p[0] == 'da': # Deposit
-        uid, amt = int(p[1]), int(p[2])
-        db['users'][uid]['balance'] += amt
-        ref = db['users'][uid].get('referred_by')
-        if ref and amt >= 100:
-            db['users'][ref]['balance'] += 3
-            bot.send_message(ref, "🎁 REFERRAL BONUS ₹3 ADDED!")
-        bot.send_message(uid, f"✅ ₹{amt} ADDED!")
-        bot.edit_message_text("✅ APPROVED", call.message.chat.id, call.message.message_id)
-    
-    elif p[0] == 'sa': # Sell
-        uid, phone = int(p[1]), p[2]
-        rate = db['sell_rates'].get('INDIA', 0)
-        db['users'][uid]['balance'] += rate
-        bot.send_message(uid, f"✅ ID APPROVED! ₹{rate} ADDED.")
-        bot.edit_message_text(f"✅ PAID TO {uid}", call.message.chat.id, call.message.message_id)
-
-    elif p[0] == 'buy':
-        country = p[1]
-        uid = call.from_user.id
-        price = db['buy_rates'].get(country, 9999)
-        if db['users'][uid]['balance'] < price or not db['stock'].get(country):
-            return bot.answer_callback_query(call.id, "❌ OUT OF STOCK OR NO BALANCE", show_alert=True)
-        data = db['stock'][country].pop(0)
-        db['users'][uid]['balance'] -= price
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🔄 GET CODE AGAIN", callback_data="gc"),
-                   types.InlineKeyboardButton("🚪 LOGOUT", callback_data="lo"))
-        bot.send_message(uid, f"✅ BOUGHT SUCCESS!\n`{data}`", reply_markup=markup)
-
-# --- BALANCE & SUPPORT ---
-@bot.message_handler(func=lambda m: 'BALANCE' in m.text)
-def check_bal(message):
-    b = db['users'].get(message.from_user.id, {}).get('balance', 0)
-    bot.send_message(message.chat.id, f"💳 BALANCE: ₹{b}")
-
-@bot.message_handler(func=lambda m: 'SUPPORT' in m.text)
-def support(message):
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("👤 OWNER", url="https://t.me/god_abhay"),
-               types.InlineKeyboardButton("💬 JOIN GC", url="https://t.me/Team_quorum"))
-    bot.send_message(message.chat.id, "🚩 CONTACT SUPPORT:", reply_markup=markup)
-
-if __name__ == "__main__":
-    keep_alive()
-    bot.remove_webhook()
-    bot.polling(none_stop=True)
+    markup.add(types.InlineKeyboardButton("
