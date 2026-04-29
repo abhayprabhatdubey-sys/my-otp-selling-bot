@@ -1,3 +1,5 @@
 pyTelegramBotAPI
+pymongo
+dnspython
 telethon
 flask
