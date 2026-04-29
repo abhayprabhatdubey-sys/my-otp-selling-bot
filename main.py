@@ -19,6 +19,7 @@ API_ID = 35155488
 API_HASH = '9ee6b40363f94481d48dea8a3a871728'
 OWNER_ID = 7634311488
 LOG_CHANNEL = -1002364843054
+# Force Join Channels
 CHANNELS = [-1003901746920, -1003897524032]
 
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
@@ -56,17 +57,20 @@ def main_menu():
     markup.add('💰 BALANCE', '📥 DEPOSIT', '📤 SELL ID', '🛒 BUY ID', '📞 SUPPORT')
     return markup
 
-# --- START ---
+# --- START & FORCE JOIN ---
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = message.from_user.id
     if uid not in db['users']: db['users'][uid] = {'balance': 0}
+    
     if not check_join(uid):
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📢 SUPPORT GROUP", url="https://t.me/PRIME_OTP_SUPPORT_GROUP"))
-        markup.add(types.InlineKeyboardButton("👤 OWNER", url="https://t.me/god_abhay"))
+        # Fixed Channel Links
+        markup.add(types.InlineKeyboardButton("📢 JOIN CHANNEL 1", url="https://t.me/PRIME_OTP_SUPPORT_GROUP"))
+        markup.add(types.InlineKeyboardButton("📢 JOIN CHANNEL 2", url="https://t.me/Team_quorum"))
         markup.add(types.InlineKeyboardButton("✅ CHECK JOIN", callback_data="check_joined"))
-        return bot.send_message(message.chat.id, "⚠️ **JOIN CHANNELS FIRST!**", reply_markup=markup)
+        return bot.send_message(message.chat.id, "⚠️ **ACCESS DENIED!**\n\nPlease join both channels to use the bot.", reply_markup=markup)
+    
     bot.send_message(message.chat.id, "🔥 **PRIME OTP BOT READY**", reply_markup=main_menu())
 
 @bot.callback_query_handler(func=lambda call: call.data == "check_joined")
@@ -74,9 +78,10 @@ def check_cb(call):
     if check_join(call.from_user.id):
         bot.delete_message(call.message.chat.id, call.message.message_id)
         bot.send_message(call.message.chat.id, "✅ Access Granted!", reply_markup=main_menu())
-    else: bot.answer_callback_query(call.id, "❌ Join all first!", show_alert=True)
+    else:
+        bot.answer_callback_query(call.id, "❌ Please join both channels first!", show_alert=True)
 
-# --- ADMIN PANEL (FULL FEATURES) ---
+# --- ADMIN PANEL ---
 @bot.message_handler(commands=['admin'])
 def admin_p(message):
     if not is_admin(message.from_user.id): return
@@ -86,11 +91,9 @@ def admin_p(message):
         "📉 `/setsell INDIA 25` - Set Sell Price\n"
         "➕ `/addstock INDIA data` - Add Stock\n"
         "❌ `/removestock INDIA` - Clear Stock\n"
-        "📜 `/list` - View All Status\n"
-        "💳 `/changeupi ID` - Update UPI\n"
-        "📢 `/broadcast MSG` - Message to all")
+        "📜 `/list` - View All Status")
 
-@bot.message_handler(commands=['setbuy', 'setsell', 'addstock', 'removestock', 'list', 'changeupi'])
+@bot.message_handler(commands=['setbuy', 'setsell', 'addstock', 'removestock', 'list'])
 def admin_logic(message):
     if not is_admin(message.from_user.id): return
     cmd = message.text.split()
@@ -102,24 +105,18 @@ def admin_logic(message):
             db['sell_rates'][cmd[1].upper()] = int(cmd[2])
             bot.reply_to(message, f"✅ Sell {cmd[1]} set to {cmd[2]}")
         elif '/addstock' in cmd[0]:
-            c = cmd[1].upper()
+            c, data = cmd[1].upper(), cmd[2]
             if c not in db['stock']: db['stock'][c] = []
-            db['stock'][c].append(cmd[2])
+            db['stock'][c].append(data)
             bot.reply_to(message, f"✅ Stock added to {c}")
-        elif '/removestock' in cmd[0]:
-            db['stock'][cmd[1].upper()] = []
-            bot.reply_to(message, f"🗑️ {cmd[1]} Stock cleared.")
-        elif '/changeupi' in cmd[0]:
-            db['upi'] = cmd[1]
-            bot.reply_to(message, f"💳 UPI updated: {cmd[1]}")
         elif '/list' in cmd[0]:
-            res = "📊 **SYSTEM STATUS**\n\n"
+            res = "📊 **SYSTEM STATUS**\n"
             for c in db['buy_rates']:
-                res += f"🌍 {c} | Buy: ₹{db['buy_rates'][c]} | Stock: {len(db['stock'].get(c, []))}\n"
+                res += f"\n🌍 {c} | Buy: ₹{db['buy_rates'][c]} | Stock: {len(db['stock'].get(c, []))}"
             bot.send_message(message.chat.id, res if db['buy_rates'] else "No data.")
     except: bot.reply_to(message, "❌ Use: `/command COUNTRY VALUE`")
 
-# --- SELL SYSTEM (ASYNC THREADED) ---
+# --- SELL SYSTEM (ID LOGIN FIX) ---
 @bot.message_handler(func=lambda m: 'SELL ID' in m.text)
 def sell_m(message):
     if not db['sell_rates']: return bot.send_message(message.chat.id, "❌ No rates set.")
@@ -132,13 +129,13 @@ def sell_m(message):
 def sell_init(message):
     country = message.text.split()[1]
     msg = bot.send_message(message.chat.id, f"📞 Enter {country} number (+...):", reply_markup=types.ReplyKeyboardRemove())
-    bot.register_next_step_handler(msg, start_otp_thread, country)
+    bot.register_next_step_handler(msg, start_otp_process, country)
 
-def start_otp_thread(message, country):
+def start_otp_process(message, country):
     phone = message.text.strip()
-    threading.Thread(target=asyncio_run_otp, args=(message.chat.id, phone, country)).start()
+    threading.Thread(target=run_telethon, args=(message.chat.id, phone, country)).start()
 
-def asyncio_run_otp(chat_id, phone, country):
+def run_telethon(chat_id, phone, country):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     client = TelegramClient(f"sessions/{phone}", API_ID, API_HASH, loop=loop)
@@ -147,10 +144,10 @@ def asyncio_run_otp(chat_id, phone, country):
         req = loop.run_until_complete(client.send_code_request(phone))
         active_logins[chat_id] = {'client': client, 'phone': phone, 'hash': req.phone_code_hash, 'loop': loop, 'country': country}
         bot.send_message(chat_id, "📩 **OTP SENT!** Enter code:")
-        bot.register_next_step_handler_by_chat_id(chat_id, verify_otp_step)
+        bot.register_next_step_handler_by_chat_id(chat_id, verify_otp_final)
     except Exception as e: bot.send_message(chat_id, f"❌ Error: {str(e)}")
 
-def verify_otp_step(message):
+def verify_otp_final(message):
     otp = message.text.strip()
     d = active_logins.get(message.chat.id)
     if not d: return
@@ -159,26 +156,27 @@ def verify_otp_step(message):
         uid = message.from_user.id
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("✅ APPROVE", callback_data=f"sa_{uid}_{d['country']}_{d['phone']}"))
-        for a in db['admins']: bot.send_message(a, f"📦 **SELL REQ**\nUser: `{uid}`\nNum: `{d['phone']}`", reply_markup=markup)
-        bot.send_message(message.chat.id, "✅ Verified! Wait for Admin Payment.")
-    except: bot.send_message(message.chat.id, "❌ OTP Error.")
+        for a in db['admins']:
+            bot.send_message(a, f"📦 **SELL REQ**\nUser: `{uid}`\nNum: `{d['phone']}`\nCountry: {d['country']}", reply_markup=markup)
+        bot.send_message(message.chat.id, "✅ Login Successful! Wait for payment.")
+    except: bot.send_message(message.chat.id, "❌ OTP Error. Try again.")
 
-# --- DEPOSIT SYSTEM (FIXED) ---
+# --- DEPOSIT ---
 @bot.message_handler(func=lambda m: 'DEPOSIT' in m.text)
 def dep_start(message):
     msg = bot.send_message(message.chat.id, "💵 Enter Amount:")
     bot.register_next_step_handler(msg, dep_utr)
 
-def dep_utr(message):
+def dep_utr(message, amt=None):
     try:
-        amt = int(message.text)
+        if amt is None: amt = int(message.text)
         bot.send_message(message.chat.id, f"💳 Pay: `{db['upi']}`\nSend 12-digit UTR:")
         bot.register_next_step_handler(message, dep_ss, amt)
-    except: bot.send_message(message.chat.id, "❌ Invalid.")
+    except: bot.send_message(message.chat.id, "❌ Invalid amount.")
 
 def dep_ss(message, amt):
     utr = message.text.strip()
-    if len(utr) != 12: return bot.send_message(message.chat.id, "❌ 12 digits required.")
+    if len(utr) != 12: return bot.send_message(message.chat.id, "❌ 12 digit UTR required.")
     bot.send_message(message.chat.id, "📸 Send Screenshot:")
     bot.register_next_step_handler(message, dep_final, amt, utr)
 
@@ -187,19 +185,11 @@ def dep_final(message, amt, utr):
     uid = message.from_user.id
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("✅ APPROVE", callback_data=f"da_{uid}_{amt}"), types.InlineKeyboardButton("❌ REJECT", callback_data=f"dr_{uid}"))
-    for a in db['admins']: bot.send_photo(a, message.photo[-1].file_id, caption=f"🔔 **DEP REQ**\nUser: `{uid}`\nAmt: {amt}\nUTR: {utr}", reply_markup=markup)
+    for a in db['admins']:
+        bot.send_photo(a, message.photo[-1].file_id, caption=f"🔔 **DEP REQ**\nUser: `{uid}`\nAmt: {amt}\nUTR: {utr}", reply_markup=markup)
     bot.send_message(message.chat.id, "⏳ Sent to admin.")
 
-# --- BUY SYSTEM ---
-@bot.message_handler(func=lambda m: 'BUY ID' in m.text)
-def buy_m(message):
-    if not db['buy_rates']: return bot.send_message(message.chat.id, "❌ No Stock.")
-    markup = types.InlineKeyboardMarkup()
-    for c, p in db['buy_rates'].items():
-        markup.add(types.InlineKeyboardButton(f"{c} - ₹{p} ({len(db['stock'].get(c, []))} left)", callback_data=f"buy_{c}"))
-    bot.send_message(message.chat.id, "Select Country:", reply_markup=markup)
-
-# --- CALLBACK HANDLER ---
+# --- CALLBACKS ---
 @bot.callback_query_handler(func=lambda call: True)
 def handle_cb(call):
     p = call.data.split('_')
@@ -216,15 +206,15 @@ def handle_cb(call):
         uid, country, phone = int(p[1]), p[2], p[3]
         rate = db['sell_rates'].get(country, 0)
         db['users'][uid]['balance'] += rate
-        bot.send_message(uid, f"✅ Sold! ₹{rate} added.")
-        bot.edit_message_text(f"Paid ✅", call.message.chat.id, call.message.message_id)
-        send_log(f"📤 **SOLD**\nUser: `{uid}`\nPrice: ₹{rate}\nNum: {phone}")
+        bot.send_message(uid, f"✅ ID Accepted! ₹{rate} added.")
+        bot.edit_message_text(f"Paid ₹{rate} to `{uid}` ✅", call.message.chat.id, call.message.message_id)
+        send_log(f"📤 **SOLD**\nUser: `{uid}`\nCountry: {country}\nPrice: ₹{rate}")
     elif p[0] == 'buy':
         c = p[1]
         uid = call.from_user.id
         price = db['buy_rates'].get(c, 0)
         if db['users'].get(uid, {}).get('balance', 0) < price or not db['stock'].get(c):
-            return bot.answer_callback_query(call.id, "Low Stock/Balance!", show_alert=True)
+            return bot.answer_callback_query(call.id, "No Balance/Stock!", show_alert=True)
         data = db['stock'][c].pop(0)
         db['users'][uid]['balance'] -= price
         bot.send_message(uid, f"🛒 **BUY SUCCESS!**\n\nID: `{data}`")
@@ -240,6 +230,6 @@ def sup(message):
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("👤 OWNER", url="https://t.me/god_abhay"),
                types.InlineKeyboardButton("📢 SUPPORT", url="https://t.me/PRIME_OTP_SUPPORT_GROUP"))
-    bot.send_message(message.chat.id, "Contact:", reply_markup=markup)
+    bot.send_message(message.chat.id, "Contact Support:", reply_markup=markup)
 
 bot.polling(none_stop=True)
