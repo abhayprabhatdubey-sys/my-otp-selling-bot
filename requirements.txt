@@ -1,5 +1,4 @@
-pyTelegramBotAPI
-pymongo
-dnspython
-telethon
-flask
+BOT_TOKEN = 8596154779:AAFMFy7PB3NbzNCWRuHi4IxoeugM9LfKP9g
+API_ID = 35155488
+API_HASH = 9ee6b40363f94481d48dea8a3a871728
+OWNER_ID = 7634311488
