@@ -22,142 +22,108 @@ LOG_CHANNEL_ID = -1003901746920
 
 bot = telebot.TeleBot(TOKEN)
 
-# DATABASE
 db = {
-    'users': {}, # {uid: {'balance': 0, 'referred_by': None}}
+    'users': {}, 
     'admins': [OWNER_ID], 
-    'stock': [], 
+    'stock': {}, # {'INDIA': ['id1', 'id2']}
     'sell_rates': {'INDIA': 25}, 
     'buy_rates': {'INDIA': 40}
 }
-active_clients = {}
 
 def is_admin(uid): return uid in db['admins']
 
 def post_to_logs(text):
     try: bot.send_message(LOG_CHANNEL_ID, f"📢 **SYSTEM UPDATE**\n\n{text}", parse_mode="Markdown")
-    except: print("LOG ERROR!")
+    except: pass
 
-# --- START MENU & REFERRAL LOGIC ---
+# --- START MENU ---
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = message.from_user.id
     args = message.text.split()
-    
     if uid not in db['users']:
-        referred_by = None
-        if len(args) > 1 and args[1].isdigit():
-            ref_id = int(args[1])
-            if ref_id != uid: referred_by = ref_id
-        db['users'][uid] = {'balance': 0, 'referred_by': referred_by}
-
+        ref_id = int(args[1]) if len(args) > 1 and args[1].isdigit() else None
+        db['users'][uid] = {'balance': 0, 'referred_by': ref_id}
+    
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add('💰 **BALANCE**', '📥 **DEPOSIT**', '📤 **SELL ID**', '🛒 **BUY ACCOUNT**', '👥 **REFERRAL**', '📞 **SUPPORT**')
-    
-    bot.send_message(message.chat.id, "🔥 **WELCOME TO THE ULTIMATE PRIME OTP BOT**\n\n**SELECT AN OPTION TO START:**", 
-                     parse_mode="Markdown", reply_markup=markup)
+    markup.add('💰 **BALANCE**', '📥 **DEPOSIT**', '📤 **SELL ID**', '🛒 **BUY ID**', '👥 **REFERRAL**', '📞 **SUPPORT**')
+    bot.send_message(message.chat.id, "🔥 **PRIME OTP BOT READY HAI!**", parse_mode="Markdown", reply_markup=markup)
 
-# --- REFERRAL SYSTEM ---
-@bot.message_handler(func=lambda message: message.text == '👥 **REFERRAL**')
-def referral_menu(message):
-    uid = message.from_user.id
-    ref_link = f"https://t.me/{(bot.get_me()).username}?start={uid}"
-    text = (
-        "👥 **REFER & EARN SYSTEM**\n\n"
-        f"🔗 **YOUR LINK:** `{ref_link}`\n\n"
-        "✨ **EARN ₹3 FOR EVERY REFERRAL WHO DEPOSITS ₹100 OR MORE!**"
-    )
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
-
-# --- ADMIN SUPREME PANEL ---
-@bot.message_handler(commands=['admin'])
-def admin_p(message):
-    if not is_admin(message.from_user.id): return
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("➕ **ADD COUNTRY**", callback_data="adm_add_c"),
-        types.InlineKeyboardButton("❌ **DEL COUNTRY**", callback_data="adm_del_c"),
-        types.InlineKeyboardButton("💰 **EDIT RATES**", callback_data="adm_rates"),
-        types.InlineKeyboardButton("📢 **BROADCAST**", callback_data="adm_bc"),
-        types.InlineKeyboardButton("📦 **VIEW STOCK**", callback_data="adm_view_stock"),
-        types.InlineKeyboardButton("👤 **TOTAL USERS**", callback_data="adm_users")
-    )
-    bot.send_message(message.chat.id, "👑 **OWNER CONTROL PANEL**\n\n**MANUAL COMMANDS:**\n`/addbal ID AMT` | `/addadmin ID`", 
-                     parse_mode="Markdown", reply_markup=markup)
-
-# --- DEPOSIT WITH REFERRAL BONUS ---
-@bot.message_handler(func=lambda message: message.text == '📥 **DEPOSIT**')
-def dep_init(message):
-    msg = bot.send_message(message.chat.id, "💵 **ENTER AMOUNT TO DEPOSIT:**")
-    bot.register_next_step_handler(msg, dep_step_2)
-
-def dep_step_2(message):
-    try:
-        amt = int(message.text)
-        msg = bot.send_message(message.chat.id, f"💳 **PAY ₹{amt} TO:** `abhay-op.315@ptyes`\n\n**SEND 12-DIGIT UTR:**")
-        bot.register_next_step_handler(msg, dep_step_3, amt)
-    except: bot.send_message(message.chat.id, "❌ **INVALID AMOUNT!**")
-
-def dep_step_3(message, amt):
-    utr = message.text.strip()
-    if len(utr) != 12: return bot.send_message(message.chat.id, "❌ **INVALID UTR!**")
-    msg = bot.send_message(message.chat.id, "📸 **SEND PAYMENT SCREENSHOT:**")
-    bot.register_next_step_handler(msg, dep_final, amt, utr)
-
-def dep_final(message, amt, utr):
-    if message.content_type != 'photo': return bot.send_message(message.chat.id, "❌ **SEND PHOTO!**")
+# --- BUYING LOGIC (NEW) ---
+@bot.message_handler(func=lambda message: message.text == '🛒 **BUY ID**')
+def buy_init(message):
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("✅ **APPROVE**", callback_data=f"dapp_{message.from_user.id}_{amt}"))
+    for country in db['buy_rates'].keys():
+        markup.add(types.InlineKeyboardButton(f"{country} - ₹{db['buy_rates'][country]}", callback_data=f"buy_{country}"))
+    bot.send_message(message.chat.id, "🌍 **KONSI COUNTRY KI ID CHAHIYE?**", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('buy_'))
+def process_buy(call):
+    uid = call.from_user.id
+    country = call.data.split('_')[1]
+    price = db['buy_rates'].get(country, 999)
+    user_bal = db['users'][uid].get('balance', 0)
+
+    if user_bal < price:
+        return bot.answer_callback_query(call.id, "❌ INSUFFICIENT BALANCE!", show_alert=True)
+    
+    if not db['stock'].get(country):
+        return bot.answer_callback_query(call.id, "❌ STOCK EMPTY FOR THIS COUNTRY!", show_alert=True)
+
+    # Success Buy
+    id_data = db['stock'][country].pop(0)
+    db['users'][uid]['balance'] -= price
+    bot.send_message(uid, f"✅ **PURCHASE SUCCESS!**\n🌍 **COUNTRY:** {country}\n🔐 **ID DATA:** `{id_data}`\n💰 **DEBITED:** ₹{price}")
+    post_to_logs(f"🛒 **ID BOUGHT:** {country} by {uid}")
+    bot.delete_message(call.message.chat.id, call.message.message_id)
+
+# --- SELLING LOGIC (APPROVAL BASED) ---
+@bot.message_handler(func=lambda message: message.text == '📤 **SELL ID**')
+def sell_init(message):
+    msg = bot.send_message(message.chat.id, "📞 **ID DETAILS BHEJO (NUMBER:OTP YA LOGIN DATA):**")
+    bot.register_next_step_handler(msg, sell_req)
+
+def sell_req(message):
+    data = message.text
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("✅ APPROVE & PAY", callback_data=f"selapp_{message.from_user.id}_{data}"))
     for adm in db['admins']:
-        bot.send_message(adm, f"🔔 **DEPOSIT REQ**\nUSER: `{message.from_user.id}`\nAMT: ₹{amt}\nUTR: `{utr}`", reply_markup=markup)
-        bot.send_photo(adm, message.photo[-1].file_id)
-    bot.send_message(message.chat.id, "⏳ **DEPOSIT PENDING APPROVAL!**")
+        bot.send_message(adm, f"🔔 **NEW SELL REQ**\nUSER: `{message.from_user.id}`\nDATA: `{data}`", reply_markup=markup)
+    bot.send_message(message.chat.id, "⏳ **SENT! ADMIN APPROVE KARTE HI FUND ADD HO JAYEGA.**")
 
-# --- CALLBACK HANDLERS ---
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callbacks(call):
-    p = call.data.split('_')
+@bot.callback_query_handler(func=lambda call: call.data.startswith('selapp_'))
+def approve_sell(call):
+    _, uid, data = call.data.split('_', 2)
+    uid = int(uid)
+    rate = 25 # Default sell rate
+    db['users'][uid]['balance'] += rate
+    # Stock mein add karo
+    if 'INDIA' not in db['stock']: db['stock']['INDIA'] = []
+    db['stock']['INDIA'].append(data)
     
-    if p[0] == 'dapp':
-        uid, amt = int(p[1]), int(p[2])
-        db['users'][uid]['balance'] += amt
-        
-        # Referral Bonus Logic
-        ref_by = db['users'][uid].get('referred_by')
-        if ref_by and amt >= 100:
-            db['users'][ref_by]['balance'] += 3
-            bot.send_message(ref_by, f"🎁 **REFERRAL BONUS! YOU EARNED ₹3 FROM USER {uid}**")
-        
-        bot.send_message(uid, f"✅ **DEPOSIT OF ₹{amt} APPROVED!**")
-        post_to_logs(f"💰 **DEPOSIT SUCCESS**\n**USER:** {uid}\n**AMOUNT:** ₹{amt}")
-        bot.edit_message_text("✅ **DEPOSIT APPROVED**", call.message.chat.id, call.message.message_id)
+    bot.send_message(uid, f"✅ **SELL APPROVED! ₹{rate} ADDED TO YOUR BOT FUND.**")
+    bot.edit_message_text("✅ **APPROVED & PAID**", call.message.chat.id, call.message.message_id)
 
-    elif p[0] == 'adm':
-        if p[1] == 'bc':
-            msg = bot.send_message(call.message.chat.id, "📢 **ENTER BROADCAST MESSAGE:**")
-            bot.register_next_step_handler(msg, process_bc)
-        elif p[1] == 'users':
-            bot.send_message(call.message.chat.id, f"👤 **TOTAL USERS:** {len(db['users'])}")
+# --- DEPOSIT & ADMIN ---
+@bot.callback_query_handler(func=lambda call: call.data.startswith('dapp_'))
+def approve_dep(call):
+    _, uid, amt = call.data.split('_')
+    uid, amt = int(uid), int(amt)
+    db['users'][uid]['balance'] += amt
+    bot.send_message(uid, f"✅ **₹{amt} DEPOSIT APPROVED!**")
+    bot.delete_message(call.message.chat.id, call.message.message_id)
 
-def process_bc(message):
+# --- BROADCAST ---
+@bot.message_handler(commands=['broadcast'])
+def do_bc(message):
+    if not is_admin(message.from_user.id): return
+    text = message.text.replace('/broadcast', '').strip()
     for u in db['users'].keys():
-        try: bot.send_message(u, f"📢 **IMPORTANT:**\n\n{message.text}", parse_mode="Markdown")
-    except: pass
-    bot.send_message(message.chat.id, "✅ **BROADCAST DONE!**")
-
-# --- USER OPTIONS ---
-@bot.message_handler(func=lambda message: message.text == '💰 **BALANCE**')
-def bal(message):
-    b = db['users'].get(message.from_user.id, {}).get('balance', 0)
-    bot.send_message(message.chat.id, f"💳 **YOUR BALANCE: ₹{b}**", parse_mode="Markdown")
-
-@bot.message_handler(func=lambda message: message.text == '📞 **SUPPORT**')
-def support(message):
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("👤 **OWNER**", url="https://t.me/god_abhay"),
-               types.InlineKeyboardButton("💬 **JOIN GC**", url="https://t.me/Team_quorum"))
-    bot.send_message(message.chat.id, "🚩 **SUPPORT CHANNELS:**", reply_markup=markup)
+        try: bot.send_message(u, f"📢 **UPDATE:**\n\n{text}")
+        except: pass
+    bot.send_message(message.chat.id, "✅ **DONE**")
 
 if __name__ == "__main__":
     keep_alive()
-    bot.polling(none_stop=True, interval=0, timeout=20)
+    bot.remove_webhook()
+    bot.polling(none_stop=True)
